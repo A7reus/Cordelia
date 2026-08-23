@@ -33,17 +33,30 @@ func randomFingerprint() (string, error) {
 	return hex.EncodeToString(buf), nil
 }
 
-func Path() (string, error) {
+func Dir(override string) (string, error) {
+	if override != "" {
+		return filepath.Join(override, "cordelia"), nil
+	}
+
 	configDir, err := os.UserConfigDir()
 	if err != nil {
 		return "", err
 	}
 
-	return filepath.Join(configDir, "cordelia", fileName), nil
+	return filepath.Join(configDir, "cordelia"), nil
 }
 
-func Save(id Identity) error {
-	path, err := Path()
+func Path(dirOverride string) (string, error) {
+	dir, err := Dir(dirOverride)
+	if err != nil {
+		return "", err
+	}
+
+	return filepath.Join(dir, fileName), nil
+}
+
+func Save(id Identity, dirOverride string) error {
+	path, err := Path(dirOverride)
 	if err != nil {
 		return err
 	}
@@ -58,8 +71,8 @@ func Save(id Identity) error {
 	return os.WriteFile(path, data, 0o644)
 }
 
-func Load() (Identity, error) {
-	path, err := Path()
+func Load(dirOverride string) (Identity, error) {
+	path, err := Path(dirOverride)
 	if err != nil {
 		return Identity{}, err
 	}

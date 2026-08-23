@@ -3,33 +3,42 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"time"
 
+	"github.com/A7reus/Cordelia/internal/discovery"
 	"github.com/A7reus/Cordelia/internal/identity"
 )
 
-const defaultPort = "47777"
+const defaultPort = 47777
+
+var (
+	port    = flag.Int("port", defaultPort, "TCP API port")
+	dataDir = flag.String("data-dir", "", "config directory override (for testing)")
+)
 
 func main() {
-	id, err := identity.Load()
+	flag.Parse()
+
+	id, err := identity.Load(*dataDir)
 	if errors.Is(err, os.ErrNotExist) {
-		id, err = createIdentity()
+		id, err = createIdentity(*dataDir)
 	}
 	if err != nil {
 		log.Fatal("cordelia:", err)
 	}
 
-	if len(os.Args) > 1 {
-		switch os.Args[1] {
+	if args := flag.Args(); len(args) > 0 {
+		switch args[0] {
 		case "probe":
-			if len(os.Args) != 3 {
+			if len(args) != 2 {
 				log.Fatal("usage: cordelia probe <host:port>")
 			}
-			probe(os.Args[2])
+			probe(args[1])
 			return
 		default:
 			log.Fatalf("unknown command %q", os.Args[1])
@@ -39,7 +48,10 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /info", infoHandler(id))
 
-	addr := ":" + defaultPort
+	go discovery.Listen(id)
+	go discovery.Announce(id, *port)
+
+	addr := fmt.Sprintf(":%d", *port)
 	log.Printf("Serving API on %s", addr)
 	if err := http.ListenAndServe(addr, mux); err != nil {
 		log.Fatal(err)
@@ -74,7 +86,7 @@ func infoHandler(id identity.Identity) http.HandlerFunc {
 	}
 }
 
-func createIdentity() (identity.Identity, error) {
+func createIdentity(dataDir string) (identity.Identity, error) {
 	name := "cordelia-device"
 	if host, err := os.Hostname(); err == nil && host != "" {
 		name = host
@@ -84,7 +96,7 @@ func createIdentity() (identity.Identity, error) {
 	if err != nil {
 		return identity.Identity{}, err
 	}
-	if err := identity.Save(id); err != nil {
+	if err := identity.Save(id, dataDir); err != nil {
 		return identity.Identity{}, err
 	}
 
