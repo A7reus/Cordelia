@@ -8,10 +8,12 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sort"
 	"time"
 
 	"github.com/A7reus/Cordelia/internal/discovery"
 	"github.com/A7reus/Cordelia/internal/identity"
+	"github.com/A7reus/Cordelia/internal/registry"
 )
 
 const defaultPort = 47777
@@ -40,16 +42,22 @@ func main() {
 			}
 			probe(args[1])
 			return
+		case "peers":
+			fetchPeers(*port)
+			return
 		default:
-			log.Fatalf("unknown command %q", os.Args[1])
+			log.Fatalf("unknown command %q", args[0])
 		}
 	}
 
+	reg := registry.New(10 * time.Second)
+	go reg.SweepEvery(3 * time.Second)
+	go discovery.Listen(id, reg)
+	go discovery.Announce(id, *port)
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /info", infoHandler(id))
-
-	go discovery.Listen(id)
-	go discovery.Announce(id, *port)
+	mux.HandleFunc("GET /peers", peersHandler(reg))
 
 	addr := fmt.Sprintf(":%d", *port)
 	log.Printf("Serving API on %s", addr)
@@ -83,6 +91,41 @@ func infoHandler(id identity.Identity) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(id)
+	}
+}
+
+func peersHandler(reg *registry.Registry) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(reg.Snapshot())
+	}
+}
+
+func fetchPeers(port int) {
+	client := http.Client{Timeout: 3 * time.Second}
+
+	res, err := client.Get(fmt.Sprintf("http://localhost:%d/peers", port))
+	if err != nil {
+		log.Fatalf("peers: %v", err)
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusOK {
+		log.Fatalf("peers: got status %s", res.Status)
+	}
+
+	var peers []registry.Peer
+	if err := json.NewDecoder(res.Body).Decode(&peers); err != nil {
+		log.Fatalf("peers: bad response: %v", err)
+	}
+
+	sort.Slice(peers, func(i, j int) bool {
+		return peers[i].Name < peers[j].Name
+	})
+
+	for _, peer := range peers {
+		fmt.Printf("%-24s %-34s %15s:%d\n", peer.Name, peer.Fingerprint, peer.Addr, peer.TCPPort)
+		fmt.Printf("%d peer(s)\n", len(peers))
 	}
 }
 

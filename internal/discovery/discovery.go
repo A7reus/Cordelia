@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/A7reus/Cordelia/internal/identity"
+	"github.com/A7reus/Cordelia/internal/registry"
 )
 
 const (
@@ -43,7 +44,7 @@ func Announce(id identity.Identity, tcpPort int) {
 			TCPPort:     tcpPort,
 		})
 		if err != nil {
-			log.Printf("discover: send: %v", err)
+			log.Printf("discovery: send: %v", err)
 		}
 		if _, err := conn.Write(data); err != nil {
 			log.Printf("dicovery: send: %v", err)
@@ -56,7 +57,7 @@ func Announce(id identity.Identity, tcpPort int) {
 	}
 }
 
-func Listen(self identity.Identity) {
+func Listen(self identity.Identity, reg *registry.Registry) {
 	group, err := net.ResolveUDPAddr("udp4", groupAddress)
 	if err != nil {
 		log.Fatal("discovery:", err)
@@ -84,6 +85,7 @@ func Listen(self identity.Identity) {
 			continue
 		}
 
-		log.Printf("heard %s [%s] at %s (api :%d)", ann.Name, ann.Fingerprint, src.IP, ann.TCPPort)
+		// log.Printf("heard %s [%s] at %s (api :%d)", ann.Name, ann.Fingerprint, src.IP, ann.TCPPort)
+		reg.Update(ann.Name, ann.Fingerprint, src.IP.String(), ann.TCPPort)
 	}
 }
