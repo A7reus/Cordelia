@@ -85,7 +85,6 @@ func Listen(self identity.Identity, reg *registry.Registry) {
 			continue
 		}
 
-		// log.Printf("heard %s [%s] at %s (api :%d)", ann.Name, ann.Fingerprint, src.IP, ann.TCPPort)
 		reg.Update(ann.Name, ann.Fingerprint, src.IP.String(), ann.TCPPort)
 	}
 }

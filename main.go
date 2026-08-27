@@ -195,7 +195,6 @@ func fetchPeers(port int) {
 
 	for _, peer := range peers {
 		fmt.Printf("%-24s %-34s %15s:%d\n", peer.Name, peer.Fingerprint, peer.Addr, peer.TCPPort)
-		fmt.Printf("%d peer(s)\n", len(peers))
 	}
 }
 
