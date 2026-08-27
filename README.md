@@ -2,7 +2,7 @@
 
 Cordelia is a LocalSend-inspired file and message sharing tool for local networks. It is written in Go as a learning project focused on networking fundamentals. Every device runs the same binary, discovers peers automatically on the LAN, and exchanges messages over a simple HTTP API.
 
-Current status: v0.1.0 -> device identity, LAN discovery, peer registry, and text messaging. File transfer, TLS, and GUI are planned for later releases.
+Current status: v0.2.0 -> device identity, LAN discovery, peer registry, text messaging, and file transfer. TLS and GUI are planned for later releases.
 
 ## How it works
 
@@ -13,6 +13,7 @@ Current status: v0.1.0 -> device identity, LAN discovery, peer registry, and tex
   - `GET /info` -> returns the local identity as JSON
   - `GET /peers` -> returns the current peer list
   - `POST /message` -> receives a JSON message `{from, text}`
+  - `POST /upload` -> receives a file via multipart upload (`file` part), streams to `~/Downloads/cordelia` or `./downloads`
 
 All of it is implemented with the Go standard library only.
 
@@ -47,6 +48,7 @@ All of it is implemented with the Go standard library only.
    go run . probe localhost:47777
    go run . peers
    go run . send-text localhost:47777 "hello world"
+   go run . send-file localhost:47777 ./README.md
    go run . version      # prints the embedded version, defaults to "dev"
    ```
 
@@ -74,7 +76,7 @@ All of it is implemented with the Go standard library only.
 ### Building locally
 
 ```bash
-go build -trimpath -ldflags "-s -w -X main.version=v0.1.0" -o cordelia .
+go build -trimpath -ldflags "-s -w -X main.version=v0.2.0" -o cordelia .
 ./cordelia version
 ./cordelia
 ```
@@ -86,12 +88,12 @@ The `-ldflags` flag embeds the release version into the binary. Without it, `ver
 Because the project has no cgo dependencies, cross-compilation is a single command per target:
 
 ```bash
-CGO_ENABLED=0 GOOS=linux   GOARCH=amd64 go build -trimpath -ldflags "-s -w -X main.version=v0.1.0" -o dist/cordelia-linux-amd64 .
-CGO_ENABLED=0 GOOS=linux   GOARCH=arm64 go build -trimpath -ldflags "-s -w -X main.version=v0.1.0" -o dist/cordelia-linux-arm64 .
-CGO_ENABLED=0 GOOS=darwin  GOARCH=amd64 go build -trimpath -ldflags "-s -w -X main.version=v0.1.0" -o dist/cordelia-darwin-amd64 .
-CGO_ENABLED=0 GOOS=darwin  GOARCH=arm64 go build -trimpath -ldflags "-s -w -X main.version=v0.1.0" -o dist/cordelia-darwin-arm64 .
-CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w -X main.version=v0.1.0" -o dist/cordelia-windows-amd64.exe .
-CGO_ENABLED=0 GOOS=windows GOARCH=arm64 go build -trimpath -ldflags "-s -w -X main.version=v0.1.0" -o dist/cordelia-windows-arm64.exe .
+CGO_ENABLED=0 GOOS=linux   GOARCH=amd64 go build -trimpath -ldflags "-s -w -X main.version=v0.2.0" -o dist/cordelia-linux-amd64 .
+CGO_ENABLED=0 GOOS=linux   GOARCH=arm64 go build -trimpath -ldflags "-s -w -X main.version=v0.2.0" -o dist/cordelia-linux-arm64 .
+CGO_ENABLED=0 GOOS=darwin  GOARCH=amd64 go build -trimpath -ldflags "-s -w -X main.version=v0.2.0" -o dist/cordelia-darwin-amd64 .
+CGO_ENABLED=0 GOOS=darwin  GOARCH=arm64 go build -trimpath -ldflags "-s -w -X main.version=v0.2.0" -o dist/cordelia-darwin-arm64 .
+CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w -X main.version=v0.2.0" -o dist/cordelia-windows-amd64.exe .
+CGO_ENABLED=0 GOOS=windows GOARCH=arm64 go build -trimpath -ldflags "-s -w -X main.version=v0.2.0" -o dist/cordelia-windows-arm64.exe .
 ```
 
 ### Automated releases (GitHub Actions)
@@ -99,8 +101,8 @@ CGO_ENABLED=0 GOOS=windows GOARCH=arm64 go build -trimpath -ldflags "-s -w -X ma
 Releases are automated. Pushing a tag matching `v*` triggers `.github/workflows/release.yml`, which builds all targets above and publishes them to the GitHub Releases page via `gh release create`. To cut a new release:
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.2.0
+git push origin v0.2.0
 ```
 
 Artifacts are named `cordelia-<os>-<arch>` (with `.exe` on Windows) and a `checksums.txt` is attached.
@@ -120,9 +122,9 @@ Artifacts are named `cordelia-<os>-<arch>` (with `.exe` on Windows) and a `check
 
 ## Roadmap
 
-- v0.1.0 (current) -> identity, discovery, peer registry, text messaging
-- Next -> file transfer over multipart upload, progress reporting
-- Later -> TLS with self-signed certificates, graceful shutdown, optional TUI
+- v0.1.0 -> identity, discovery, peer registry, text messaging
+- v0.2.0 (current) -> file transfer over multipart upload (`POST /upload`, `send-file`) with streaming
+- Next -> progress reporting, TLS with self-signed certificates, graceful shutdown, optional TUI
 
 ## License
 
