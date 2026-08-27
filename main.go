@@ -66,10 +66,12 @@ func main() {
 			sendText(args[1], id, strings.Join(args[2:], " "))
 			return
 		case "send-file":
-			if len(args) != 3 {
-				log.Fatalf("usage: cordelia send-file <host:port> <file>")
+			if len(args) < 3 {
+				log.Fatalf("usage: cordelia send-file <host:port> <file> [file...]")
 			}
-			sendFile(args[1], args[2])
+			for _, filePath := range args[2:] {
+				sendFile(args[1], filePath)
+			}
 			return
 		case "version":
 			fmt.Println(version)
