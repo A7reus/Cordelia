@@ -47,7 +47,7 @@ func Announce(id identity.Identity, tcpPort int) {
 			log.Printf("discovery: send: %v", err)
 		}
 		if _, err := conn.Write(data); err != nil {
-			log.Printf("dicovery: send: %v", err)
+			log.Printf("discovery: send: %v", err)
 		}
 	}
 

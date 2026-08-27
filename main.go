@@ -22,6 +22,8 @@ import (
 const defaultPort = 47777
 const maxMessageSize = 64 * 1024
 
+var version = "dev"
+
 var (
 	port    = flag.Int("port", defaultPort, "TCP API port")
 	dataDir = flag.String("data-dir", "", "config directory override (for testing)")
@@ -59,6 +61,9 @@ func main() {
 				log.Fatalf("usage: cordelia send-text <host:port> <text>")
 			}
 			sendText(args[1], id, strings.Join(args[2:], " "))
+			return
+		case "version":
+			fmt.Println(version)
 			return
 		default:
 			log.Fatalf("unknown command %q", args[0])
@@ -123,7 +128,8 @@ func messageHandler() http.HandlerFunc {
 
 		var msg Message
 		if err := json.NewDecoder(r.Body).Decode(&msg); err != nil {
-			if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
+			var tooBig *http.MaxBytesError
+			if errors.As(err, &tooBig) {
 				http.Error(w, "message too long", http.StatusRequestEntityTooLarge)
 				return
 			}
@@ -194,8 +200,8 @@ func fetchPeers(port int) {
 
 	for _, peer := range peers {
 		fmt.Printf("%-24s %-34s %15s:%d\n", peer.Name, peer.Fingerprint, peer.Addr, peer.TCPPort)
-		fmt.Printf("%d peer(s)\n", len(peers))
 	}
+	fmt.Printf("%d peer(s)\n", len(peers))
 }
 
 func createIdentity(dataDir string) (identity.Identity, error) {
