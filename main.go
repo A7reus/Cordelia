@@ -191,7 +191,7 @@ func uploadHandler() http.HandlerFunc {
 			return
 		}
 
-		destPath := filepath.Join(downloadsDir, filename)
+		destPath := uniquePath(downloadsDir, filename)
 		dest, err := os.Create(destPath)
 		if err != nil {
 			http.Error(w, "cannot create file", http.StatusInternalServerError)
@@ -219,6 +219,23 @@ func downloadDir() string {
 	}
 
 	return filepath.Join(".", "downloads")
+}
+
+func uniquePath(dir, name string) string {
+	candidate := filepath.Join(dir, name)
+	if _, err := os.Stat(candidate); os.IsNotExist(err) {
+		return candidate
+	}
+
+	ext := filepath.Ext(name)
+	base := strings.TrimSuffix(name, ext)
+	for i := 1; ; i++ {
+		tried := fmt.Sprintf("%s (%d)%s", base, i, ext)
+		candidate = filepath.Join(dir, tried)
+		if _, err := os.Stat(candidate); os.IsNotExist(err) {
+			return candidate
+		}
+	}
 }
 
 func sendText(addr string, self identity.Identity, text string) {
