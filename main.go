@@ -1,14 +1,17 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/A7reus/Cordelia/internal/discovery"
@@ -17,11 +20,17 @@ import (
 )
 
 const defaultPort = 47777
+const maxMessageSize = 64 * 1024
 
 var (
 	port    = flag.Int("port", defaultPort, "TCP API port")
 	dataDir = flag.String("data-dir", "", "config directory override (for testing)")
 )
+
+type Message struct {
+	From string `json:"from"`
+	Text string `json:"text"`
+}
 
 func main() {
 	flag.Parse()
@@ -45,6 +54,12 @@ func main() {
 		case "peers":
 			fetchPeers(*port)
 			return
+		case "send-text":
+			if len(args) < 3 {
+				log.Fatalf("usage: cordelia send-text <host:port> <text>")
+			}
+			sendText(args[1], id, strings.Join(args[2:], " "))
+			return
 		default:
 			log.Fatalf("unknown command %q", args[0])
 		}
@@ -58,6 +73,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /info", infoHandler(id))
 	mux.HandleFunc("GET /peers", peersHandler(reg))
+	mux.HandleFunc("POST /message", messageHandler())
 
 	addr := fmt.Sprintf(":%d", *port)
 	log.Printf("Serving API on %s", addr)
@@ -99,6 +115,60 @@ func peersHandler(reg *registry.Registry) http.HandlerFunc {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(reg.Snapshot())
 	}
+}
+
+func messageHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, maxMessageSize)
+
+		var msg Message
+		if err := json.NewDecoder(r.Body).Decode(&msg); err != nil {
+			var tooBig *http.MaxBytesError
+			if errors.As(err, &tooBig) {
+				http.Error(w, "message too long", http.StatusRequestEntityTooLarge)
+				return
+			}
+
+			http.Error(w, "invalid json", http.StatusBadRequest)
+			return
+		}
+
+		if msg.Text == "" {
+			http.Error(w, "empty text", http.StatusBadRequest)
+			return
+		}
+
+		log.Printf("message from %s: %s", msg.From, msg.Text)
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+func sendText(addr string, self identity.Identity, text string) {
+	client := http.Client{Timeout: 3 * time.Second}
+
+	payload, err := json.Marshal(Message{From: self.Name, Text: text})
+	if err != nil {
+		log.Fatalf("send-text: %v", err)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("http://%s/message", addr), bytes.NewBuffer(payload))
+	if err != nil {
+		log.Fatalf("send-text: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	res, err := client.Do(req)
+	if err != nil {
+		log.Fatalf("send-text %s: %v", addr, err)
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusNoContent {
+		body, _ := io.ReadAll(res.Body)
+		log.Fatalf("send-text %s: got %s: %s", addr, res.Status, body)
+	}
+
+	log.Printf("delivered to %s", addr)
 }
 
 func fetchPeers(port int) {
