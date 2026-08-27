@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"mime/multipart"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -64,6 +65,12 @@ func main() {
 			}
 			sendText(args[1], id, strings.Join(args[2:], " "))
 			return
+		case "send-file":
+			if len(args) != 3 {
+				log.Fatalf("usage: cordelia send-file <host:port> <file>")
+			}
+			sendFile(args[1], args[2])
+			return
 		case "version":
 			fmt.Println(version)
 			return
@@ -84,7 +91,7 @@ func main() {
 	mux.HandleFunc("POST /upload", uploadHandler())
 
 	addr := fmt.Sprintf(":%d", *port)
-	log.Printf("Serving API on %s", addr)
+	log.Printf("serving API on %s", addr)
 	if err := http.ListenAndServe(addr, mux); err != nil {
 		log.Fatal(err)
 	}
@@ -193,7 +200,7 @@ func uploadHandler() http.HandlerFunc {
 		defer dest.Close()
 
 		if _, err := io.Copy(dest, file); err != nil {
-			http.Error(w, "filed to save", http.StatusInternalServerError)
+			http.Error(w, "failed to save", http.StatusInternalServerError)
 			return
 		}
 
@@ -240,6 +247,60 @@ func sendText(addr string, self identity.Identity, text string) {
 	}
 
 	log.Printf("delivered to %s", addr)
+}
+
+func sendFile(addr, filePath string) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		log.Fatalf("send-file: %v", err)
+	}
+	defer file.Close()
+
+	info, err := file.Stat()
+	if err != nil {
+		log.Fatalf("send-file: %v", err)
+	}
+	if info.IsDir() {
+		log.Fatalf("send-file: %s is a directory", filePath)
+	}
+
+	pr, pw := io.Pipe()
+	writer := multipart.NewWriter(pw)
+
+	go func() {
+		defer pw.Close()
+		defer writer.Close()
+
+		part, err := writer.CreateFormFile("file", filepath.Base(filePath))
+		if err != nil {
+			pw.CloseWithError(err)
+			return
+		}
+		if _, err := io.Copy(part, file); err != nil {
+			pw.CloseWithError(err)
+			return
+		}
+	}()
+
+	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("http://%s/upload", addr), pr)
+	if err != nil {
+		log.Fatalf("send-file: %v", err)
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	client := http.Client{Timeout: 30 * time.Second}
+	res, err := client.Do(req)
+	if err != nil {
+		log.Fatalf("send-file %s: %v", addr, err)
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusNoContent {
+		body, _ := io.ReadAll(res.Body)
+		log.Fatalf("send-file %s: got %s: %s", addr, res.Status, body)
+	}
+
+	log.Printf("sent %s (%d bytes) to %s", filepath.Base(filePath), info.Size(), addr)
 }
 
 func fetchPeers(port int) {
