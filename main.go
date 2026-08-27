@@ -249,6 +249,28 @@ func sendText(addr string, self identity.Identity, text string) {
 	log.Printf("delivered to %s", addr)
 }
 
+type progressReader struct {
+	r       io.Reader
+	total   int64
+	sent    int64
+	lastPct int
+	name    string
+}
+
+func (p *progressReader) Read(b []byte) (int, error) {
+	n, err := p.r.Read(b)
+	p.sent += int64(n)
+	if p.total > 0 {
+		pct := int(p.sent * 100 / p.total)
+		if pct != p.lastPct && (pct%10 == 0 || p.sent == p.total) {
+			log.Printf("sending %s: %d/%d bytes (%d%%)", p.name, p.sent, p.total, pct)
+			p.lastPct = pct
+		}
+	}
+
+	return n, err
+}
+
 func sendFile(addr, filePath string) {
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -266,6 +288,11 @@ func sendFile(addr, filePath string) {
 
 	pr, pw := io.Pipe()
 	writer := multipart.NewWriter(pw)
+	progress := &progressReader{
+		r:     file,
+		total: info.Size(),
+		name:  filepath.Base(filePath),
+	}
 
 	go func() {
 		defer pw.Close()
@@ -276,7 +303,7 @@ func sendFile(addr, filePath string) {
 			pw.CloseWithError(err)
 			return
 		}
-		if _, err := io.Copy(part, file); err != nil {
+		if _, err := io.Copy(part, progress); err != nil {
 			pw.CloseWithError(err)
 			return
 		}
