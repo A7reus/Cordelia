@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -21,6 +22,7 @@ import (
 
 const defaultPort = 47777
 const maxMessageSize = 64 * 1024
+const maxUploadSize = 100 << 20
 
 var version = "dev"
 
@@ -79,6 +81,7 @@ func main() {
 	mux.HandleFunc("GET /info", infoHandler(id))
 	mux.HandleFunc("GET /peers", peersHandler(reg))
 	mux.HandleFunc("POST /message", messageHandler())
+	mux.HandleFunc("POST /upload", uploadHandler())
 
 	addr := fmt.Sprintf(":%d", *port)
 	log.Printf("Serving API on %s", addr)
@@ -146,6 +149,69 @@ func messageHandler() http.HandlerFunc {
 		log.Printf("message from %s: %s", msg.From, msg.Text)
 		w.WriteHeader(http.StatusNoContent)
 	}
+}
+
+func uploadHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, maxUploadSize+10<<20)
+
+		if err := r.ParseMultipartForm(10 << 20); err != nil {
+			var tooBig *http.MaxBytesError
+			if errors.As(err, &tooBig) {
+				http.Error(w, "file too large", http.StatusRequestEntityTooLarge)
+				return
+			}
+			http.Error(w, "invalid multipart", http.StatusBadRequest)
+			return
+		}
+
+		file, header, err := r.FormFile("file")
+		if err != nil {
+			http.Error(w, "missing file part", http.StatusBadRequest)
+			return
+		}
+		defer file.Close()
+
+		filename := filepath.Base(header.Filename)
+		if filename == "" || filename == "." {
+			http.Error(w, "invalid filename", http.StatusBadRequest)
+			return
+		}
+
+		downloadsDir := downloadDir()
+		if err := os.MkdirAll(downloadsDir, 0o755); err != nil {
+			http.Error(w, "cannot create download dir", http.StatusInternalServerError)
+			return
+		}
+
+		destPath := filepath.Join(downloadsDir, filename)
+		dest, err := os.Create(destPath)
+		if err != nil {
+			http.Error(w, "cannot create file", http.StatusInternalServerError)
+			return
+		}
+		defer dest.Close()
+
+		if _, err := io.Copy(dest, file); err != nil {
+			http.Error(w, "filed to save", http.StatusInternalServerError)
+			return
+		}
+
+		log.Printf("received file %s (%d bytes) -> %s", filename, header.Size, destPath)
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+func downloadDir() string {
+	home, err := os.UserHomeDir()
+	if err == nil {
+		dl := filepath.Join(home, "Downloads", "cordelia")
+		if _, err := os.Stat(filepath.Join(home, "Downloads")); err == nil {
+			return dl
+		}
+	}
+
+	return filepath.Join(".", "downloads")
 }
 
 func sendText(addr string, self identity.Identity, text string) {
