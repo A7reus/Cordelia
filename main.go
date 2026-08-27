@@ -30,6 +30,7 @@ var version = "dev"
 var (
 	port    = flag.Int("port", defaultPort, "TCP API port")
 	dataDir = flag.String("data-dir", "", "config directory override (for testing)")
+	outDir  = flag.String("out", "", "download directory (default ~/Downloads/cordelia)")
 )
 
 type Message struct {
@@ -212,6 +213,9 @@ func uploadHandler() http.HandlerFunc {
 }
 
 func downloadDir() string {
+	if *outDir != "" {
+		return *outDir
+	}
 	home, err := os.UserHomeDir()
 	if err == nil {
 		dl := filepath.Join(home, "Downloads", "cordelia")
