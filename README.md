@@ -2,7 +2,7 @@
 
 Cordelia is a LocalSend-inspired file and message sharing tool for local networks. It is written in Go as a learning project focused on networking fundamentals. Every device runs the same binary, discovers peers automatically on the LAN, and exchanges messages over a simple HTTP API.
 
-Current status: v0.2.0 -> device identity, LAN discovery, peer registry, text messaging, and file transfer. TLS and GUI are planned for later releases.
+Current status: v0.3.0 -> device identity, LAN discovery, peer registry, text messaging, and file transfer with progress, collision-safe naming, multi-file and custom download directory. TLS and GUI are planned for later releases.
 
 ## How it works
 
@@ -35,7 +35,7 @@ All of it is implemented with the Go standard library only.
 2. Run directly:
 
    ```bash
-   go run .
+   go run ./cmd/cordelia
    ```
 
    On first run, this creates an identity and starts the API server. Logs show the address being served.
@@ -45,21 +45,25 @@ All of it is implemented with the Go standard library only.
    ```bash
    go vet ./...          # static checks
    go run -race .        # run with the race detector
-   go run . probe localhost:47777
-   go run . peers
-   go run . send-text localhost:47777 "hello world"
-   go run . send-file localhost:47777 ./README.md
-   go run . version      # prints the embedded version, defaults to "dev"
+   go run ./cmd/cordelia probe localhost:47777
+   go run ./cmd/cordelia peers
+   go run ./cmd/cordelia send-text localhost:47777 "hello world"
+   go run ./cmd/cordelia send-file localhost:47777 ./README.md
+   go run ./cmd/cordelia send-file localhost:47777 file1.txt file2.txt  # multiple files
+   go run ./cmd/cordelia version      # prints the embedded version, defaults to "dev"
    ```
 
 4. Running two instances on one machine (for testing discovery):
 
    ```bash
    # terminal A
-   go run .
+   go run ./cmd/cordelia
 
    # terminal B -> different port and different config directory
-   go run . -port 47778 -data-dir /tmp/cordelia-b
+   go run ./cmd/cordelia -port 47778 -data-dir /tmp/cordelia-b
+
+   # custom download directory
+   go run ./cmd/cordelia -out /tmp/my-downloads
    ```
 
    The second instance gets its own fingerprint and announces on its own TCP port. Both discover each other over multicast loopback. If you use UFW or another firewall, allow the ports first:
@@ -76,7 +80,7 @@ All of it is implemented with the Go standard library only.
 ### Building locally
 
 ```bash
-go build -trimpath -ldflags "-s -w -X main.version=v0.2.0" -o cordelia .
+go build -trimpath -ldflags "-s -w -X main.version=v0.3.0" -o cordelia ./cmd/cordelia
 ./cordelia version
 ./cordelia
 ```
@@ -88,12 +92,12 @@ The `-ldflags` flag embeds the release version into the binary. Without it, `ver
 Because the project has no cgo dependencies, cross-compilation is a single command per target:
 
 ```bash
-CGO_ENABLED=0 GOOS=linux   GOARCH=amd64 go build -trimpath -ldflags "-s -w -X main.version=v0.2.0" -o dist/cordelia-linux-amd64 .
-CGO_ENABLED=0 GOOS=linux   GOARCH=arm64 go build -trimpath -ldflags "-s -w -X main.version=v0.2.0" -o dist/cordelia-linux-arm64 .
-CGO_ENABLED=0 GOOS=darwin  GOARCH=amd64 go build -trimpath -ldflags "-s -w -X main.version=v0.2.0" -o dist/cordelia-darwin-amd64 .
-CGO_ENABLED=0 GOOS=darwin  GOARCH=arm64 go build -trimpath -ldflags "-s -w -X main.version=v0.2.0" -o dist/cordelia-darwin-arm64 .
-CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w -X main.version=v0.2.0" -o dist/cordelia-windows-amd64.exe .
-CGO_ENABLED=0 GOOS=windows GOARCH=arm64 go build -trimpath -ldflags "-s -w -X main.version=v0.2.0" -o dist/cordelia-windows-arm64.exe .
+CGO_ENABLED=0 GOOS=linux   GOARCH=amd64 go build -trimpath -ldflags "-s -w -X main.version=v0.3.0" -o dist/cordelia-linux-amd64 ./cmd/cordelia
+CGO_ENABLED=0 GOOS=linux   GOARCH=arm64 go build -trimpath -ldflags "-s -w -X main.version=v0.3.0" -o dist/cordelia-linux-arm64 ./cmd/cordelia
+CGO_ENABLED=0 GOOS=darwin  GOARCH=amd64 go build -trimpath -ldflags "-s -w -X main.version=v0.3.0" -o dist/cordelia-darwin-amd64 ./cmd/cordelia
+CGO_ENABLED=0 GOOS=darwin  GOARCH=arm64 go build -trimpath -ldflags "-s -w -X main.version=v0.3.0" -o dist/cordelia-darwin-arm64 ./cmd/cordelia
+CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w -X main.version=v0.3.0" -o dist/cordelia-windows-amd64.exe ./cmd/cordelia
+CGO_ENABLED=0 GOOS=windows GOARCH=arm64 go build -trimpath -ldflags "-s -w -X main.version=v0.3.0" -o dist/cordelia-windows-arm64.exe ./cmd/cordelia
 ```
 
 ### Automated releases (GitHub Actions)
@@ -101,8 +105,8 @@ CGO_ENABLED=0 GOOS=windows GOARCH=arm64 go build -trimpath -ldflags "-s -w -X ma
 Releases are automated. Pushing a tag matching `v*` triggers `.github/workflows/release.yml`, which builds all targets above and publishes them to the GitHub Releases page via `gh release create`. To cut a new release:
 
 ```bash
-git tag v0.2.0
-git push origin v0.2.0
+git tag v0.3.0
+git push origin v0.3.0
 ```
 
 Artifacts are named `cordelia-<os>-<arch>` (with `.exe` on Windows) and a `checksums.txt` is attached.
@@ -111,8 +115,11 @@ Artifacts are named `cordelia-<os>-<arch>` (with `.exe` on Windows) and a `check
 
 ```
 .
-├── main.go                 # CLI dispatch, HTTP handlers, client commands
+├── cmd/
+│   └── cordelia/           # main entry, flag parsing, wiring
 ├── internal/
+│   ├── client/             # probe, peers, send-text, send-file, progress
+│   ├── server/             # HTTP handlers, download dir, upload limits
 │   ├── identity/           # fingerprint generation and persistence
 │   ├── discovery/          # UDP multicast announce and listen
 │   └── registry/           # peer registry with TTL
@@ -123,8 +130,9 @@ Artifacts are named `cordelia-<os>-<arch>` (with `.exe` on Windows) and a `check
 ## Roadmap
 
 - v0.1.0 -> identity, discovery, peer registry, text messaging
-- v0.2.0 (current) -> file transfer over multipart upload (`POST /upload`, `send-file`) with streaming
-- Next -> progress reporting, TLS with self-signed certificates, graceful shutdown, optional TUI
+- v0.2.0 -> file transfer over multipart upload (`POST /upload`, `send-file`) with streaming
+- v0.3.0 (current) -> progress reporting, collision-safe naming, multi-file transfer, custom download dir (`--out`)
+- Next -> TLS with self-signed certificates, graceful shutdown, optional TUI
 
 ## License
 
