@@ -123,8 +123,7 @@ func messageHandler() http.HandlerFunc {
 
 		var msg Message
 		if err := json.NewDecoder(r.Body).Decode(&msg); err != nil {
-			var tooBig *http.MaxBytesError
-			if errors.As(err, &tooBig) {
+			if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 				http.Error(w, "message too long", http.StatusRequestEntityTooLarge)
 				return
 			}
@@ -195,6 +194,7 @@ func fetchPeers(port int) {
 
 	for _, peer := range peers {
 		fmt.Printf("%-24s %-34s %15s:%d\n", peer.Name, peer.Fingerprint, peer.Addr, peer.TCPPort)
+		fmt.Printf("%d peers(s)\n", len(peers))
 	}
 }
 
