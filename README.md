@@ -23,6 +23,102 @@ All of it is implemented with the Go standard library only.
 - Linux, macOS, or Windows. The code is pure Go with `CGO_ENABLED=0`, so it cross-compiles without extra toolchains.
 - For LAN discovery, UDP inbound on port `47777` must be allowed. The HTTP API also needs TCP `47777`.
 
+## Quick start (downloaded binary)
+
+You do not need Go installed to use Cordelia. Download the prebuilt binary for your system.
+
+1. Go to the Releases page: `https://github.com/A7reus/Cordelia/releases`
+2. Download the file that matches your OS and CPU. Example names:
+   - Linux Intel/AMD: `cordelia-linux-amd64`
+   - Linux ARM (Raspberry Pi): `cordelia-linux-arm64`
+   - macOS Intel: `cordelia-darwin-amd64`
+   - macOS Apple Silicon: `cordelia-darwin-arm64`
+   - Windows Intel/AMD: `cordelia-windows-amd64.exe`
+   - Windows ARM: `cordelia-windows-arm64.exe`
+3. Optional but recommended: verify the download with `checksums.txt` from the same release:
+   ```bash
+   sha256sum -c checksums.txt --ignore-missing
+   ```
+
+**Linux and macOS:**
+
+```bash
+chmod +x cordelia-linux-amd64
+./cordelia-linux-amd64 version
+./cordelia-linux-amd64
+```
+
+You can rename it to `cordelia` and move it to a directory in your PATH for convenience:
+
+```bash
+mv cordelia-linux-amd64 cordelia
+chmod +x cordelia
+sudo mv cordelia /usr/local/bin/
+cordelia version
+```
+
+On macOS, the first run may show a Gatekeeper warning because the binary is not signed. Right-click the file and choose Open, or run `xattr -d com.apple.quarantine cordelia` if you trust it.
+
+**Windows:**
+
+Download `cordelia-windows-amd64.exe`. If your browser warns about an unsigned binary, keep it if you trust the source. Open PowerShell in the download folder:
+
+```powershell
+.\cordelia-windows-amd64.exe version
+.\cordelia-windows-amd64.exe
+```
+
+You can rename it to `cordelia.exe` for shorter commands.
+
+**First run:**
+
+When you run `cordelia` with no arguments, it creates an identity and starts the server:
+
+```bash
+./cordelia
+# 2026/08/27 21:39:08 serving API on :47777
+```
+
+Leave this running. Open another terminal on the same machine or another device on the same WiFi/LAN to send.
+
+**Common commands (no Go needed):**
+
+```bash
+./cordelia probe localhost:47777
+./cordelia peers
+./cordelia send-text 192.168.1.5:47777 "hello world"
+./cordelia send-file 192.168.1.5:47777 ./photo.jpg
+./cordelia send-file 192.168.1.5:47777 file1.txt file2.pdf
+./cordelia version
+```
+
+Files you receive are saved to `~/Downloads/cordelia` if that folder exists, otherwise to `./downloads` next to the binary. If a file with the same name already exists, it is saved as `photo (1).jpg` etc. To choose a different folder:
+
+```bash
+./cordelia -out /tmp/my-downloads
+./cordelia -out /tmp/my-downloads -port 47778
+```
+
+Other flags:
+
+```bash
+./cordelia -h
+# -port int        TCP API port (default 47777)
+# -data-dir string config directory override (for testing)
+# -out string      download directory (default ~/Downloads/cordelia)
+```
+
+If peers do not appear, allow Cordelia through your firewall. On Ubuntu:
+
+```bash
+sudo ufw allow in 47777/udp
+sudo ufw allow in 47777/tcp
+```
+
+On Windows, allow it in Windows Defender Firewall when prompted.
+
+To update, download the newer release and replace the binary.
+
 ## Development setup
 
 1. Clone the repository:
