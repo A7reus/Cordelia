@@ -179,6 +179,21 @@ func SendText(addr, from, text string, localPort int) {
 	log.Printf("delivered to %s", addr)
 }
 
+func fileChecksum(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
 type progressReader struct {
 	r       io.Reader
 	total   int64
@@ -213,6 +228,11 @@ func SendFile(addr, filePath string, localPort int) {
 	}
 	if info.IsDir() {
 		log.Fatalf("send-file: %s is a directory", filePath)
+	}
+
+	localSum, err := fileChecksum(filePath)
+	if err != nil {
+		log.Fatalf("send-file checksum: %v", err)
 	}
 
 	pr, pw := io.Pipe()
@@ -253,5 +273,12 @@ func SendFile(addr, filePath string, localPort int) {
 		log.Fatalf("send-file %s: got %s: %s", addr, res.Status, body)
 	}
 
-	log.Printf("sent %s (%d bytes) to %s", filepath.Base(filePath), info.Size(), addr)
+	serverSum := res.Header.Get("X-Checksum-Sha256")
+	if serverSum != "" && serverSum != localSum {
+		log.Fatalf("checksum mismatch: local %s server %s", localSum, serverSum)
+	}
+	if serverSum != "" {
+		log.Printf("checksum verified sha256 %s", serverSum)
+	}
+	log.Printf("sent %s (%d bytes) sha256 %s to %s", filepath.Base(filePath), info.Size(), localSum, addr)
 }

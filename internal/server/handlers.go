@@ -1,6 +1,8 @@
 package server
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -102,12 +104,15 @@ func UploadHandler(downloadDir string) http.HandlerFunc {
 		}
 		defer dest.Close()
 
-		if _, err := io.Copy(dest, file); err != nil {
+		h := sha256.New()
+		if _, err := io.Copy(io.MultiWriter(dest, h), file); err != nil {
 			http.Error(w, "failed to save", http.StatusInternalServerError)
 			return
 		}
 
-		log.Printf("received file %s (%d bytes) -> %s", filename, header.Size, destPath)
+		sum := hex.EncodeToString(h.Sum(nil))
+		w.Header().Set("X-Checksum-Sha256", sum)
+		log.Printf("received file %s (%d bytes) sha256 %s -> %s", filename, header.Size, sum, destPath)
 		w.WriteHeader(http.StatusNoContent)
 	}
 }
