@@ -55,14 +55,14 @@ func main() {
 			if len(args) < 3 {
 				log.Fatalf("usage: cordelia send-text <host:port> <text>")
 			}
-			client.SendText(args[1], id.Name, strings.Join(args[2:], " "))
+			client.SendText(args[1], id.Name, strings.Join(args[2:], " "), *port)
 			return
 		case "send-file":
 			if len(args) < 3 {
 				log.Fatalf("usage: cordelia send-file <host:port> <file> [file...]")
 			}
 			for _, fp := range args[2:] {
-				client.SendFile(args[1], fp)
+				client.SendFile(args[1], fp, *port)
 			}
 			return
 		case "version":

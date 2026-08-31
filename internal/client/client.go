@@ -11,10 +11,12 @@ import (
 	"io"
 	"log"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/A7reus/Cordelia/internal/identity"
@@ -43,6 +45,60 @@ func insecureClient(timeout time.Duration) http.Client {
 			},
 		},
 	}
+}
+
+func pinnedClient(expectedFingerprint string, timeout time.Duration) http.Client {
+	return http.Client{
+		Timeout: timeout,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+				VerifyPeerCertificate: func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
+					if len(rawCerts) == 0 {
+						return fmt.Errorf("no cert presented")
+					}
+					cert, err := x509.ParseCertificate(rawCerts[0])
+					if err != nil {
+						return nil
+					}
+
+					sum := sha256.Sum256(cert.Raw)
+					actual := hex.EncodeToString(sum[:])
+					log.Printf("server cert fingerprint %s", actual)
+					if expectedFingerprint != "" && !strings.EqualFold(actual, expectedFingerprint) {
+						return fmt.Errorf("cert fingerprint mismatch: expected %s got %s", expectedFingerprint, actual)
+					}
+					return nil
+				},
+			},
+		},
+	}
+}
+
+func expectedFingerprintForAddr(targetAddr string, localPort int) string {
+	_, portStr, err := net.SplitHostPort(targetAddr)
+	if err != nil {
+		return ""
+	}
+
+	c := insecureClient(2 * time.Second)
+	res, err := c.Get(fmt.Sprintf("https://localhost:%d/peers", localPort))
+	if err != nil {
+		return ""
+	}
+	defer res.Body.Close()
+
+	var peers []registry.Peer
+	if err := json.NewDecoder(res.Body).Decode(&peers); err != nil {
+		return ""
+	}
+	for _, p := range peers {
+		if fmt.Sprintf("%d", p.TCPPort) == portStr {
+			return p.CertFingerprint
+		}
+	}
+
+	return ""
 }
 
 func Probe(addr string) {
@@ -94,8 +150,9 @@ func FetchPeers(port int) {
 	fmt.Printf("%d peer(s)\n", len(peers))
 }
 
-func SendText(addr, from, text string) {
-	client := insecureClient(3 * time.Second)
+func SendText(addr, from, text string, localPort int) {
+	expected := expectedFingerprintForAddr(addr, localPort)
+	client := pinnedClient(expected, 3*time.Second)
 
 	payload, err := json.Marshal(map[string]string{"from": from, "text": text})
 	if err != nil {
@@ -143,7 +200,7 @@ func (p *progressReader) Read(b []byte) (int, error) {
 	return n, err
 }
 
-func SendFile(addr, filePath string) {
+func SendFile(addr, filePath string, localPort int) {
 	file, err := os.Open(filePath)
 	if err != nil {
 		log.Fatalf("send-file: %v", err)
@@ -183,7 +240,8 @@ func SendFile(addr, filePath string) {
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
-	client := insecureClient(30 * time.Second)
+	expected := expectedFingerprintForAddr(addr, localPort)
+	client := pinnedClient(expected, 30*time.Second)
 	res, err := client.Do(req)
 	if err != nil {
 		log.Fatalf("send-file %s: %v", addr, err)
