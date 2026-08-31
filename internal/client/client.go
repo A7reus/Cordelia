@@ -2,6 +2,7 @@ package client
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -17,10 +18,19 @@ import (
 	"github.com/A7reus/Cordelia/internal/registry"
 )
 
-func Probe(addr string) {
-	client := http.Client{Timeout: 3 * time.Second}
+func insecureClient(timeout time.Duration) http.Client {
+	return http.Client{
+		Timeout: timeout,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
+	}
+}
 
-	res, err := client.Get(fmt.Sprintf("http://%s/info", addr))
+func Probe(addr string) {
+	client := insecureClient(3 * time.Second)
+
+	res, err := client.Get(fmt.Sprintf("https://%s/info", addr))
 	if err != nil {
 		log.Fatalf("probe %s: %v", addr, err)
 	}
@@ -39,9 +49,9 @@ func Probe(addr string) {
 }
 
 func FetchPeers(port int) {
-	client := http.Client{Timeout: 3 * time.Second}
+	client := insecureClient(3 * time.Second)
 
-	res, err := client.Get(fmt.Sprintf("http://localhost:%d/peers", port))
+	res, err := client.Get(fmt.Sprintf("https://localhost:%d/peers", port))
 	if err != nil {
 		log.Fatalf("peers: %v", err)
 	}
@@ -67,14 +77,14 @@ func FetchPeers(port int) {
 }
 
 func SendText(addr, from, text string) {
-	client := http.Client{Timeout: 3 * time.Second}
+	client := insecureClient(3 * time.Second)
 
 	payload, err := json.Marshal(map[string]string{"from": from, "text": text})
 	if err != nil {
 		log.Fatalf("send-text: %v", err)
 	}
 
-	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("http://%s/message", addr), bytes.NewBuffer(payload))
+	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("https://%s/message", addr), bytes.NewBuffer(payload))
 	if err != nil {
 		log.Fatalf("send-text: %v", err)
 	}
@@ -149,13 +159,13 @@ func SendFile(addr, filePath string) {
 		}
 	}()
 
-	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("http://%s/upload", addr), pr)
+	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("https://%s/upload", addr), pr)
 	if err != nil {
 		log.Fatalf("send-file: %v", err)
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
-	client := http.Client{Timeout: 30 * time.Second}
+	client := insecureClient(30 * time.Second)
 	res, err := client.Do(req)
 	if err != nil {
 		log.Fatalf("send-file %s: %v", addr, err)
