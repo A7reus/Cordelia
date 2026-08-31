@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"errors"
 	"flag"
@@ -8,7 +9,9 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/A7reus/Cordelia/internal/certs"
@@ -96,7 +99,7 @@ func main() {
 	mux.HandleFunc("POST /upload", server.UploadHandler(downloadDir))
 
 	addr := fmt.Sprintf(":%d", *port)
-	srv := &http.Server{
+	server := &http.Server{
 		Addr:    addr,
 		Handler: mux,
 		TLSConfig: &tls.Config{
@@ -106,9 +109,24 @@ func main() {
 	}
 
 	log.Printf("serving API on %s with TLS", addr)
-	if err := srv.ListenAndServeTLS("", ""); err != nil {
-		log.Fatal(err)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	go func() {
+		if err := server.ListenAndServeTLS("", ""); err != nil {
+			log.Fatal(err)
+		}
+	}()
+
+	<-ctx.Done()
+	log.Println("shutting down...")
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		log.Printf("shutdown error: %v", err)
 	}
+	log.Println("server stopped")
 }
 
 func createIdentity(dataDir string) (identity.Identity, error) {
