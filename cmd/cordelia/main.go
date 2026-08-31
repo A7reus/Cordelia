@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"errors"
 	"flag"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/A7reus/Cordelia/internal/certs"
 	"github.com/A7reus/Cordelia/internal/client"
 	"github.com/A7reus/Cordelia/internal/discovery"
 	"github.com/A7reus/Cordelia/internal/identity"
@@ -84,9 +86,23 @@ func main() {
 	mux.HandleFunc("POST /message", server.MessageHandler())
 	mux.HandleFunc("POST /upload", server.UploadHandler(downloadDir))
 
+	cert, err := certs.LoadOrCreate(*dataDir)
+	if err != nil {
+		log.Fatalf("cert: %v", err)
+	}
+
 	addr := fmt.Sprintf(":%d", *port)
-	log.Printf("serving API on %s", addr)
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	srv := &http.Server{
+		Addr:    addr,
+		Handler: mux,
+		TLSConfig: &tls.Config{
+			Certificates: []tls.Certificate{cert},
+			MinVersion:   tls.VersionTLS12,
+		},
+	}
+
+	log.Printf("serving API on %s with TLS", addr)
+	if err := srv.ListenAndServeTLS("", ""); err != nil {
 		log.Fatal(err)
 	}
 }
