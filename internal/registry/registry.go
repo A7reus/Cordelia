@@ -7,11 +7,12 @@ import (
 )
 
 type Peer struct {
-	Name        string    `json:"name"`
-	Fingerprint string    `json:"fingerprint"`
-	Addr        string    `json:"addr"`
-	TCPPort     int       `json:"tcp_port"`
-	LastSeen    time.Time `json:"last_seen"`
+	Name            string    `json:"name"`
+	Fingerprint     string    `json:"fingerprint"`
+	CertFingerprint string    `json:"cert_fingerprint"`
+	Addr            string    `json:"addr"`
+	TCPPort         int       `json:"tcp_port"`
+	LastSeen        time.Time `json:"last_seen"`
 }
 
 type Registry struct {
@@ -27,17 +28,18 @@ func New(ttl time.Duration) *Registry {
 	}
 }
 
-func (r *Registry) Update(name, fingerprint, addr string, tcpPort int) {
+func (r *Registry) Update(name, fingerprint, certFingerprint, addr string, tcpPort int) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	_, known := r.peers[fingerprint]
 	r.peers[fingerprint] = Peer{
-		Name:        name,
-		Fingerprint: fingerprint,
-		Addr:        addr,
-		TCPPort:     tcpPort,
-		LastSeen:    time.Now(),
+		Name:            name,
+		Fingerprint:     fingerprint,
+		CertFingerprint: certFingerprint,
+		Addr:            addr,
+		TCPPort:         tcpPort,
+		LastSeen:        time.Now(),
 	}
 	if !known {
 		log.Printf("discovered %s [%s] at %s", name, fingerprint, addr)

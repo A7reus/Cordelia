@@ -17,12 +17,13 @@ const (
 )
 
 type Announcement struct {
-	Name        string `json:"name"`
-	Fingerprint string `json:"fingerprint"`
-	TCPPort     int    `json:"tcp_port"`
+	Name            string `json:"name"`
+	Fingerprint     string `json:"fingerprint"`
+	CertFingerprint string `json:"cert_fingerprint"`
+	TCPPort         int    `json:"tcp_port"`
 }
 
-func Announce(id identity.Identity, tcpPort int) {
+func Announce(id identity.Identity, certFingerprint string, tcpPort int) {
 	group, err := net.ResolveUDPAddr("udp4", groupAddress)
 	if err != nil {
 		log.Fatal("discovery:", err)
@@ -39,9 +40,10 @@ func Announce(id identity.Identity, tcpPort int) {
 
 	send := func() {
 		data, err := json.Marshal(Announcement{
-			Name:        id.Name,
-			Fingerprint: id.Fingerprint,
-			TCPPort:     tcpPort,
+			Name:            id.Name,
+			Fingerprint:     id.Fingerprint,
+			CertFingerprint: certFingerprint,
+			TCPPort:         tcpPort,
 		})
 		if err != nil {
 			log.Printf("discovery: send: %v", err)
@@ -85,6 +87,6 @@ func Listen(self identity.Identity, reg *registry.Registry) {
 			continue
 		}
 
-		reg.Update(ann.Name, ann.Fingerprint, src.IP.String(), ann.TCPPort)
+		reg.Update(ann.Name, ann.Fingerprint, ann.CertFingerprint, src.IP.String(), ann.TCPPort)
 	}
 }

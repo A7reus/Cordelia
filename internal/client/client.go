@@ -2,7 +2,10 @@ package client
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"crypto/tls"
+	"crypto/x509"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -22,7 +25,22 @@ func insecureClient(timeout time.Duration) http.Client {
 	return http.Client{
 		Timeout: timeout,
 		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+				VerifyPeerCertificate: func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
+					if len(rawCerts) == 0 {
+						return nil
+					}
+					cert, err := x509.ParseCertificate(rawCerts[0])
+					if err != nil {
+						return nil
+					}
+
+					sum := sha256.Sum256(cert.Raw)
+					log.Printf("server cert fingerprint %s", hex.EncodeToString(sum[:]))
+					return nil
+				},
+			},
 		},
 	}
 }

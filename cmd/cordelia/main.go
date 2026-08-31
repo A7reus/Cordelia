@@ -73,10 +73,19 @@ func main() {
 		}
 	}
 
+	cert, err := certs.LoadOrCreate(*dataDir)
+	if err != nil {
+		log.Fatalf("cert: %v", err)
+	}
+	certFingerprint, err := certs.Fingerprint(cert)
+	if err != nil {
+		log.Fatalf("cert fingerprint: %v", err)
+	}
+
 	reg := registry.New(10 * time.Second)
 	go reg.SweepEvery(3 * time.Second)
 	go discovery.Listen(id, reg)
-	go discovery.Announce(id, *port)
+	go discovery.Announce(id, certFingerprint, *port)
 
 	downloadDir := server.ResolveDownloadDir(*outDir)
 
@@ -85,11 +94,6 @@ func main() {
 	mux.HandleFunc("GET /peers", server.PeersHandler(reg))
 	mux.HandleFunc("POST /message", server.MessageHandler())
 	mux.HandleFunc("POST /upload", server.UploadHandler(downloadDir))
-
-	cert, err := certs.LoadOrCreate(*dataDir)
-	if err != nil {
-		log.Fatalf("cert: %v", err)
-	}
 
 	addr := fmt.Sprintf(":%d", *port)
 	srv := &http.Server{

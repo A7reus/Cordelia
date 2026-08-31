@@ -4,10 +4,13 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/hex"
 	"encoding/pem"
+	"fmt"
 	"math/big"
 	"net"
 	"os"
@@ -46,6 +49,20 @@ func keyPath(dataDir string) (string, error) {
 	}
 
 	return filepath.Join(d, keyFile), nil
+}
+
+func Fingerprint(cert tls.Certificate) (string, error) {
+	if len(cert.Certificate) == 0 {
+		return "", fmt.Errorf("no certificate")
+	}
+
+	parsed, err := x509.ParseCertificate(cert.Certificate[0])
+	if err != nil {
+		return "", err
+	}
+
+	sum := sha256.Sum256(parsed.Raw)
+	return hex.EncodeToString(sum[:]), nil
 }
 
 func LoadOrCreate(dataDir string) (tls.Certificate, error) {
