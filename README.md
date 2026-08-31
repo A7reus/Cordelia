@@ -2,18 +2,19 @@
 
 Cordelia is a LocalSend-inspired file and message sharing tool for local networks. It is written in Go as a learning project focused on networking fundamentals. Every device runs the same binary, discovers peers automatically on the LAN, and exchanges messages over a simple HTTP API.
 
-Current status: v0.3.0 -> device identity, LAN discovery, peer registry, text messaging, and file transfer with progress, collision-safe naming, multi-file and custom download directory. TLS and GUI are planned for later releases.
+Current status: v0.4.0 -> device identity, LAN discovery, peer registry, text messaging, file transfer with progress, and TLS with self-signed certificates and fingerprint pinning. GUI is planned for later releases.
 
 ## How it works
 
 - Each instance generates a persistent identity (name and fingerprint) on first run and stores it under the OS config directory.
 - Discovery uses UDP multicast on `239.255.77.77:47777`. Instances announce themselves every 3 seconds and listen for announcements from others.
 - A peer registry keeps the list of recently seen devices. Entries expire after 10 seconds of silence and are swept every 3 seconds. The registry is protected by a mutex because it is accessed from multiple goroutines.
-- The HTTP API runs on TCP `47777` by default and exposes:
+- The HTTP API runs on TCP `47777` over TLS (self-signed cert, `~/.config/cordelia/cert.pem`) and exposes:
   - `GET /info` -> returns the local identity as JSON
-  - `GET /peers` -> returns the current peer list
+  - `GET /peers` -> returns the current peer list with `cert_fingerprint`
   - `POST /message` -> receives a JSON message `{from, text}`
   - `POST /upload` -> receives a file via multipart upload (`file` part), streams to `~/Downloads/cordelia` or `./downloads`
+- Discovery announces the cert fingerprint for TLS pinning; clients verify the server cert matches the announced fingerprint
 
 All of it is implemented with the Go standard library only.
 
@@ -176,7 +177,7 @@ To update, download the newer release and replace the binary.
 ### Building locally
 
 ```bash
-go build -trimpath -ldflags "-s -w -X main.version=v0.3.0" -o cordelia ./cmd/cordelia
+go build -trimpath -ldflags "-s -w -X main.version=v0.4.0" -o cordelia ./cmd/cordelia
 ./cordelia version
 ./cordelia
 ```
@@ -188,12 +189,12 @@ The `-ldflags` flag embeds the release version into the binary. Without it, `ver
 Because the project has no cgo dependencies, cross-compilation is a single command per target:
 
 ```bash
-CGO_ENABLED=0 GOOS=linux   GOARCH=amd64 go build -trimpath -ldflags "-s -w -X main.version=v0.3.0" -o dist/cordelia-linux-amd64 ./cmd/cordelia
-CGO_ENABLED=0 GOOS=linux   GOARCH=arm64 go build -trimpath -ldflags "-s -w -X main.version=v0.3.0" -o dist/cordelia-linux-arm64 ./cmd/cordelia
-CGO_ENABLED=0 GOOS=darwin  GOARCH=amd64 go build -trimpath -ldflags "-s -w -X main.version=v0.3.0" -o dist/cordelia-darwin-amd64 ./cmd/cordelia
-CGO_ENABLED=0 GOOS=darwin  GOARCH=arm64 go build -trimpath -ldflags "-s -w -X main.version=v0.3.0" -o dist/cordelia-darwin-arm64 ./cmd/cordelia
-CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w -X main.version=v0.3.0" -o dist/cordelia-windows-amd64.exe ./cmd/cordelia
-CGO_ENABLED=0 GOOS=windows GOARCH=arm64 go build -trimpath -ldflags "-s -w -X main.version=v0.3.0" -o dist/cordelia-windows-arm64.exe ./cmd/cordelia
+CGO_ENABLED=0 GOOS=linux   GOARCH=amd64 go build -trimpath -ldflags "-s -w -X main.version=v0.4.0" -o dist/cordelia-linux-amd64 ./cmd/cordelia
+CGO_ENABLED=0 GOOS=linux   GOARCH=arm64 go build -trimpath -ldflags "-s -w -X main.version=v0.4.0" -o dist/cordelia-linux-arm64 ./cmd/cordelia
+CGO_ENABLED=0 GOOS=darwin  GOARCH=amd64 go build -trimpath -ldflags "-s -w -X main.version=v0.4.0" -o dist/cordelia-darwin-amd64 ./cmd/cordelia
+CGO_ENABLED=0 GOOS=darwin  GOARCH=arm64 go build -trimpath -ldflags "-s -w -X main.version=v0.4.0" -o dist/cordelia-darwin-arm64 ./cmd/cordelia
+CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w -X main.version=v0.4.0" -o dist/cordelia-windows-amd64.exe ./cmd/cordelia
+CGO_ENABLED=0 GOOS=windows GOARCH=arm64 go build -trimpath -ldflags "-s -w -X main.version=v0.4.0" -o dist/cordelia-windows-arm64.exe ./cmd/cordelia
 ```
 
 ### Automated releases (GitHub Actions)
@@ -201,8 +202,8 @@ CGO_ENABLED=0 GOOS=windows GOARCH=arm64 go build -trimpath -ldflags "-s -w -X ma
 Releases are automated. Pushing a tag matching `v*` triggers `.github/workflows/release.yml`, which builds all targets above and publishes them to the GitHub Releases page via `gh release create`. To cut a new release:
 
 ```bash
-git tag v0.3.0
-git push origin v0.3.0
+git tag v0.4.0
+git push origin v0.4.0
 ```
 
 Artifacts are named `cordelia-<os>-<arch>` (with `.exe` on Windows) and a `checksums.txt` is attached.
@@ -214,11 +215,12 @@ Artifacts are named `cordelia-<os>-<arch>` (with `.exe` on Windows) and a `check
 ├── cmd/
 │   └── cordelia/           # main entry, flag parsing, wiring
 ├── internal/
-│   ├── client/             # probe, peers, send-text, send-file, progress
+│   ├── certs/              # self-signed cert generation and fingerprint
+│   ├── client/             # probe, peers, send-text, send-file, progress, TLS pinning
 │   ├── server/             # HTTP handlers, download dir, upload limits
 │   ├── identity/           # fingerprint generation and persistence
-│   ├── discovery/          # UDP multicast announce and listen
-│   └── registry/           # peer registry with TTL
+│   ├── discovery/          # UDP multicast announce and listen (with cert fingerprint)
+│   └── registry/           # peer registry with TTL and cert fingerprint
 ├── go.mod
 └── README.md
 ```
@@ -227,8 +229,9 @@ Artifacts are named `cordelia-<os>-<arch>` (with `.exe` on Windows) and a `check
 
 - v0.1.0 -> identity, discovery, peer registry, text messaging
 - v0.2.0 -> file transfer over multipart upload (`POST /upload`, `send-file`) with streaming
-- v0.3.0 (current) -> progress reporting, collision-safe naming, multi-file transfer, custom download dir (`--out`)
-- Next -> TLS with self-signed certificates, graceful shutdown, optional TUI
+- v0.3.0 -> progress reporting, collision-safe naming, multi-file transfer, custom download dir (`--out`)
+- v0.4.0 (current) -> TLS with self-signed certificates, cert fingerprint in discovery, and pinning for `send-text`/`send-file`
+- Next -> graceful shutdown, optional TUI
 
 ## License
 
