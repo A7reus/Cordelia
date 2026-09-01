@@ -199,22 +199,35 @@ func SendText(addr, from, text string, localPort int) {
 		log.Fatalf("send-text: %v", err)
 	}
 
-	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("https://%s/message", addr), bytes.NewBuffer(payload))
-	if err != nil {
-		log.Fatalf("send-text: %v", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
+	var res *http.Response
+	var lastErr error
+	for attempt := range 3 {
+		req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("https://%s/message", addr), bytes.NewBuffer(payload))
+		if err != nil {
+			log.Fatalf("send-text: %v", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
 
-	res, err := client.Do(req)
-	if err != nil {
-		log.Fatalf("send-text %s: %v", addr, err)
+		res, err := client.Do(req)
+		if err == nil && res.StatusCode == http.StatusNoContent {
+			break
+		}
+		if err == nil {
+			body, _ := io.ReadAll(res.Body)
+			res.Body.Close()
+			err = fmt.Errorf("got %s: %s", res.Status, body)
+		}
+
+		lastErr = err
+		if attempt < 2 {
+			backoff := time.Duration(500*(1<<attempt)) * time.Millisecond
+			log.Printf("retry %d/3 after %v: %v", attempt+1, backoff, err)
+			time.Sleep(backoff)
+			continue
+		}
+		log.Fatalf("send-text %s: %v", addr, lastErr)
 	}
 	defer res.Body.Close()
-
-	if res.StatusCode != http.StatusNoContent {
-		body, _ := io.ReadAll(res.Body)
-		log.Fatalf("send-text %s: got %s: %s", addr, res.Status, body)
-	}
 
 	log.Printf("delivered to %s", addr)
 }
