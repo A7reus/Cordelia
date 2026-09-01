@@ -2,7 +2,7 @@
 
 Cordelia is a LocalSend-inspired file and message sharing tool for local networks. It is written in Go as a learning project focused on networking fundamentals. Every device runs the same binary, discovers peers automatically on the LAN, and exchanges messages over a simple HTTP API.
 
-Current status: v0.5.0 -> device identity, LAN discovery, peer registry, text messaging, file transfer with progress and checksums, TLS with pinning, graceful shutdown, and interactive peer picker. GUI is planned for later releases.
+Current status: v1.0.0 -> device identity, LAN discovery, peer registry, text messaging, file transfer with progress and checksums, TLS with pinning, graceful shutdown, interactive peer picker, retry with backoff, and persistent config file. API frozen under `/v1`.
 
 ## How it works
 
@@ -16,6 +16,7 @@ Current status: v0.5.0 -> device identity, LAN discovery, peer registry, text me
   - `POST /upload` -> receives a file via multipart upload (`file` part), streams to `~/Downloads/cordelia` or `./downloads`
 - Discovery announces the cert fingerprint for TLS pinning; clients verify the server cert matches the announced fingerprint
 - Graceful shutdown on SIGINT/SIGTERM and sha256 checksums for file integrity (`X-Checksum-Sha256`)
+- Persistent config at `~/.config/cordelia/config.json` (`port`, `out_dir`, `ttl`), flags override file
 
 All of it is implemented with the Go standard library only.
 
@@ -185,7 +186,7 @@ To update, download the newer release and replace the binary.
 ### Building locally
 
 ```bash
-go build -trimpath -ldflags "-s -w -X main.version=v0.5.0" -o cordelia ./cmd/cordelia
+go build -trimpath -ldflags "-s -w -X main.version=v1.0.0" -o cordelia ./cmd/cordelia
 ./cordelia version
 ./cordelia
 ```
@@ -197,12 +198,12 @@ The `-ldflags` flag embeds the release version into the binary. Without it, `ver
 Because the project has no cgo dependencies, cross-compilation is a single command per target:
 
 ```bash
-CGO_ENABLED=0 GOOS=linux   GOARCH=amd64 go build -trimpath -ldflags "-s -w -X main.version=v0.5.0" -o dist/cordelia-linux-amd64 ./cmd/cordelia
-CGO_ENABLED=0 GOOS=linux   GOARCH=arm64 go build -trimpath -ldflags "-s -w -X main.version=v0.5.0" -o dist/cordelia-linux-arm64 ./cmd/cordelia
-CGO_ENABLED=0 GOOS=darwin  GOARCH=amd64 go build -trimpath -ldflags "-s -w -X main.version=v0.5.0" -o dist/cordelia-darwin-amd64 ./cmd/cordelia
-CGO_ENABLED=0 GOOS=darwin  GOARCH=arm64 go build -trimpath -ldflags "-s -w -X main.version=v0.5.0" -o dist/cordelia-darwin-arm64 ./cmd/cordelia
-CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w -X main.version=v0.5.0" -o dist/cordelia-windows-amd64.exe ./cmd/cordelia
-CGO_ENABLED=0 GOOS=windows GOARCH=arm64 go build -trimpath -ldflags "-s -w -X main.version=v0.5.0" -o dist/cordelia-windows-arm64.exe ./cmd/cordelia
+CGO_ENABLED=0 GOOS=linux   GOARCH=amd64 go build -trimpath -ldflags "-s -w -X main.version=v1.0.0" -o dist/cordelia-linux-amd64 ./cmd/cordelia
+CGO_ENABLED=0 GOOS=linux   GOARCH=arm64 go build -trimpath -ldflags "-s -w -X main.version=v1.0.0" -o dist/cordelia-linux-arm64 ./cmd/cordelia
+CGO_ENABLED=0 GOOS=darwin  GOARCH=amd64 go build -trimpath -ldflags "-s -w -X main.version=v1.0.0" -o dist/cordelia-darwin-amd64 ./cmd/cordelia
+CGO_ENABLED=0 GOOS=darwin  GOARCH=arm64 go build -trimpath -ldflags "-s -w -X main.version=v1.0.0" -o dist/cordelia-darwin-arm64 ./cmd/cordelia
+CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w -X main.version=v1.0.0" -o dist/cordelia-windows-amd64.exe ./cmd/cordelia
+CGO_ENABLED=0 GOOS=windows GOARCH=arm64 go build -trimpath -ldflags "-s -w -X main.version=v1.0.0" -o dist/cordelia-windows-arm64.exe ./cmd/cordelia
 ```
 
 ### Automated releases (GitHub Actions)
@@ -210,8 +211,8 @@ CGO_ENABLED=0 GOOS=windows GOARCH=arm64 go build -trimpath -ldflags "-s -w -X ma
 Releases are automated. Pushing a tag matching `v*` triggers `.github/workflows/release.yml`, which builds all targets above and publishes them to the GitHub Releases page via `gh release create`. To cut a new release:
 
 ```bash
-git tag v0.5.0
-git push origin v0.5.0
+git tag v1.0.0
+git push origin v1.0.0
 ```
 
 Artifacts are named `cordelia-<os>-<arch>` (with `.exe` on Windows) and a `checksums.txt` is attached.
@@ -224,7 +225,8 @@ Artifacts are named `cordelia-<os>-<arch>` (with `.exe` on Windows) and a `check
 │   └── cordelia/           # main entry, flag parsing, wiring
 ├── internal/
 │   ├── certs/              # self-signed cert generation and fingerprint
-│   ├── client/             # probe, peers, send-text, send-file, progress, TLS pinning
+│   ├── client/             # probe, peers, send-text, send-file, progress, TLS pinning, retry
+│   ├── config/             # persistent config file
 │   ├── server/             # HTTP handlers, download dir, upload limits
 │   ├── identity/           # fingerprint generation and persistence
 │   ├── discovery/          # UDP multicast announce and listen (with cert fingerprint)
@@ -239,8 +241,8 @@ Artifacts are named `cordelia-<os>-<arch>` (with `.exe` on Windows) and a `check
 - v0.2.0 -> file transfer over multipart upload (`POST /upload`, `send-file`) with streaming
 - v0.3.0 -> progress reporting, collision-safe naming, multi-file transfer, custom download dir (`--out`)
 - v0.4.0 -> TLS with self-signed certificates, cert fingerprint in discovery, and pinning for `send-text`/`send-file`
-- v0.5.0 (current) -> graceful shutdown, sha256 checksums, interactive peer picker, and retry with backoff
-- Next -> config file, optional TUI, and v1.0.0 polish
+- v0.5.0 -> graceful shutdown, sha256 checksums, interactive peer picker, and retry with backoff
+- v1.0.0 (current) -> frozen API under `/v1`, persistent config, docs (`API.md`, `SECURITY.md`, `CHANGELOG.md` 1.1.0), and `go test -race` CI
 
 ## License
 
