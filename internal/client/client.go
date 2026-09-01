@@ -1,6 +1,7 @@
 package client
 
 import (
+	"bufio"
 	"bytes"
 	"crypto/sha256"
 	"crypto/tls"
@@ -16,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -122,32 +124,70 @@ func Probe(addr string) {
 	log.Printf("Found peer %s [%s]", peer.Name, peer.Fingerprint)
 }
 
-func FetchPeers(port int) {
+func ListPeers(port int) ([]registry.Peer, error) {
 	client := insecureClient(3 * time.Second)
-
 	res, err := client.Get(fmt.Sprintf("https://localhost:%d/peers", port))
 	if err != nil {
-		log.Fatalf("peers: %v", err)
+		return nil, err
 	}
 	defer res.Body.Close()
-
 	if res.StatusCode != http.StatusOK {
-		log.Fatalf("peers: got status %s", res.Status)
+		return nil, fmt.Errorf("peers: got status %s", res.Status)
 	}
 
 	var peers []registry.Peer
 	if err := json.NewDecoder(res.Body).Decode(&peers); err != nil {
-		log.Fatalf("peers: bad response: %v", err)
+		return nil, err
 	}
-
 	sort.Slice(peers, func(i, j int) bool {
+		if peers[i].Name == peers[j].Name {
+			return peers[i].Fingerprint < peers[j].Fingerprint
+		}
+
 		return peers[i].Name < peers[j].Name
 	})
+
+	return peers, nil
+}
+
+func FetchPeers(port int) {
+	peers, err := ListPeers(port)
+	if err != nil {
+		log.Fatalf("peers: %v", err)
+	}
 
 	for _, peer := range peers {
 		fmt.Printf("%-24s %-34s %15s:%d\n", peer.Name, peer.Fingerprint, peer.Addr, peer.TCPPort)
 	}
 	fmt.Printf("%d peer(s)\n", len(peers))
+}
+
+func PickPeer(localPort int) (string, error) {
+	peers, err := ListPeers(localPort)
+	if err != nil {
+		return "", err
+	}
+	if len(peers) == 0 {
+		return "", fmt.Errorf("no peers discovered, try again after a few seconds")
+	}
+
+	for i, peer := range peers {
+		fmt.Printf("[%d] %s [%s] %s:%d\n", i, peer.Name, peer.Fingerprint[:8], peer.Addr, peer.TCPPort)
+	}
+	fmt.Printf("pick peer [0-%d], default 0]: ", len(peers)-1)
+	reader := bufio.NewReader(os.Stdin)
+	line, _ := reader.ReadString('\n')
+	line = strings.TrimSpace(line)
+	if line == "" {
+		line = "0"
+	}
+	i, err := strconv.Atoi(line)
+	if err != nil || i < 0 || i >= len(peers) {
+		return "", fmt.Errorf("invalid selection %q", line)
+	}
+
+	peer := peers[i]
+	return fmt.Sprintf("%s:%d", peer.Addr, peer.TCPPort), nil
 }
 
 func SendText(addr, from, text string, localPort int) {

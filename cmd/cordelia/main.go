@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -55,17 +56,67 @@ func main() {
 			client.FetchPeers(*port)
 			return
 		case "send-text":
-			if len(args) < 3 {
-				log.Fatalf("usage: cordelia send-text <host:port> <text>")
+			if len(args) < 2 {
+				log.Fatalf("usage: cordelia send-text [host:port] <text>")
 			}
-			client.SendText(args[1], id.Name, strings.Join(args[2:], " "), *port)
+
+			var host, text string
+			if len(args) == 2 {
+				h, err := client.PickPeer(*port)
+				if err != nil {
+					log.Fatalf("pick peer: %v", err)
+				}
+				host = h
+				text = args[1]
+			} else {
+				if _, _, err := net.SplitHostPort(args[1]); err == nil {
+					host = args[1]
+					text = strings.Join(args[2:], " ")
+				} else {
+					h, err := client.PickPeer(*port)
+					if err != nil {
+						log.Fatalf("pick peer: %v", err)
+					}
+					host = h
+					text = strings.Join(args[1:], " ")
+				}
+			}
+			if text == "" {
+				log.Fatalf("usage: cordelia send-text [host:port] <text>")
+			}
+
+			client.SendText(host, id.Name, text, *port)
 			return
 		case "send-file":
-			if len(args) < 3 {
-				log.Fatalf("usage: cordelia send-file <host:port> <file> [file...]")
+			if len(args) < 2 {
+				log.Fatalf("usage: cordelia send-file [host:port] <file> [file...]")
 			}
-			for _, fp := range args[2:] {
-				client.SendFile(args[1], fp, *port)
+
+			var host string
+			var files []string
+			if len(args) == 2 {
+				h, err := client.PickPeer(*port)
+				if err != nil {
+					log.Fatalf("pick peer: %v", err)
+				}
+				host = h
+				files = args[1:]
+			} else {
+				if _, _, err := net.SplitHostPort(args[1]); err == nil {
+					host = args[1]
+					files = args[2:]
+				} else {
+					h, err := client.PickPeer(*port)
+					if err != nil {
+						log.Fatalf("pick peer: %v", err)
+					}
+					host = h
+					files = args[1:]
+				}
+			}
+
+			for _, fp := range files {
+				client.SendFile(host, fp, *port)
 			}
 			return
 		case "version":
