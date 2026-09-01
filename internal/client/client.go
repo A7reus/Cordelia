@@ -208,7 +208,8 @@ func SendText(addr, from, text string, localPort int) {
 		}
 		req.Header.Set("Content-Type", "application/json")
 
-		res, err := client.Do(req)
+		res, lastErr = client.Do(req)
+		err = lastErr
 		if err == nil && res.StatusCode == http.StatusNoContent {
 			break
 		}
@@ -269,69 +270,83 @@ func (p *progressReader) Read(b []byte) (int, error) {
 }
 
 func SendFile(addr, filePath string, localPort int) {
-	file, err := os.Open(filePath)
-	if err != nil {
-		log.Fatalf("send-file: %v", err)
-	}
-	defer file.Close()
-
-	info, err := file.Stat()
-	if err != nil {
-		log.Fatalf("send-file: %v", err)
-	}
-	if info.IsDir() {
-		log.Fatalf("send-file: %s is a directory", filePath)
-	}
-
 	localSum, err := fileChecksum(filePath)
 	if err != nil {
 		log.Fatalf("send-file checksum: %v", err)
 	}
 
-	pr, pw := io.Pipe()
-	writer := multipart.NewWriter(pw)
-	progress := &progressReader{r: file, total: info.Size(), name: filepath.Base(filePath)}
-
-	go func() {
-		defer pw.Close()
-		defer writer.Close()
-
-		part, err := writer.CreateFormFile("file", filepath.Base(filePath))
+	var lastErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		file, err := os.Open(filePath)
 		if err != nil {
-			pw.CloseWithError(err)
+			log.Fatalf("send-file: %v", err)
+		}
+		info, err := file.Stat()
+		if err != nil {
+			file.Close()
+			log.Fatalf("send-file: %v", err)
+		}
+		if info.IsDir() {
+			file.Close()
+			log.Fatalf("send-file: %s is a directory", filePath)
+		}
+
+		pr, pw := io.Pipe()
+		writer := multipart.NewWriter(pw)
+		progress := &progressReader{r: file, total: info.Size(), name: filepath.Base(filePath)}
+
+		go func() {
+			defer file.Close()
+			defer pw.Close()
+			defer writer.Close()
+
+			part, err := writer.CreateFormFile("file", filepath.Base(filePath))
+			if err != nil {
+				pw.CloseWithError(err)
+				return
+			}
+			if _, err := io.Copy(part, progress); err != nil {
+				pw.CloseWithError(err)
+				return
+			}
+		}()
+
+		req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("https://%s/upload", addr), pr)
+		if err != nil {
+			log.Fatalf("send-file: %v", err)
+		}
+		req.Header.Set("Content-Type", writer.FormDataContentType())
+
+		expected := expectedFingerprintForAddr(addr, localPort)
+		client := pinnedClient(expected, 30*time.Second)
+		res, err := client.Do(req)
+		if err == nil && res.StatusCode == http.StatusNoContent {
+			serverSum := res.Header.Get("X-Checksum-Sha256")
+			res.Body.Close()
+			if serverSum != "" && serverSum != localSum {
+				log.Fatalf("checksum mismatch: local %s server %s", localSum, serverSum)
+			}
+			if serverSum != "" {
+				log.Printf("checksum verified sha256 %s", serverSum)
+			}
+			log.Printf("sent %s (%d bytes) sha256 %s to %s", filepath.Base(filePath), info.Size(), localSum, addr)
 			return
 		}
-		if _, err := io.Copy(part, progress); err != nil {
-			pw.CloseWithError(err)
-			return
+		if err == nil {
+			body, _ := io.ReadAll(res.Body)
+			res.Body.Close()
+			err = fmt.Errorf("got %s: %s", res.Status, body)
+			if res.StatusCode >= 400 && res.StatusCode < 500 {
+				log.Fatalf("send-file %s: %v", addr, err)
+			}
 		}
-	}()
-
-	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("https://%s/upload", addr), pr)
-	if err != nil {
-		log.Fatalf("send-file: %v", err)
+		lastErr = err
+		if attempt < 2 {
+			backoff := time.Duration(500*(1<<attempt)) * time.Millisecond
+			log.Printf("retry %d/3 after %v: %v", attempt+1, backoff, err)
+			time.Sleep(backoff)
+			continue
+		}
+		log.Fatalf("send-file %s: %v", addr, lastErr)
 	}
-	req.Header.Set("Content-Type", writer.FormDataContentType())
-
-	expected := expectedFingerprintForAddr(addr, localPort)
-	client := pinnedClient(expected, 30*time.Second)
-	res, err := client.Do(req)
-	if err != nil {
-		log.Fatalf("send-file %s: %v", addr, err)
-	}
-	defer res.Body.Close()
-
-	if res.StatusCode != http.StatusNoContent {
-		body, _ := io.ReadAll(res.Body)
-		log.Fatalf("send-file %s: got %s: %s", addr, res.Status, body)
-	}
-
-	serverSum := res.Header.Get("X-Checksum-Sha256")
-	if serverSum != "" && serverSum != localSum {
-		log.Fatalf("checksum mismatch: local %s server %s", localSum, serverSum)
-	}
-	if serverSum != "" {
-		log.Printf("checksum verified sha256 %s", serverSum)
-	}
-	log.Printf("sent %s (%d bytes) sha256 %s to %s", filepath.Base(filePath), info.Size(), localSum, addr)
 }
