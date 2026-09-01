@@ -17,6 +17,7 @@ import (
 
 	"github.com/A7reus/Cordelia/internal/certs"
 	"github.com/A7reus/Cordelia/internal/client"
+	"github.com/A7reus/Cordelia/internal/config"
 	"github.com/A7reus/Cordelia/internal/discovery"
 	"github.com/A7reus/Cordelia/internal/identity"
 	"github.com/A7reus/Cordelia/internal/registry"
@@ -35,6 +36,18 @@ var (
 
 func main() {
 	flag.Parse()
+
+	cfg, err := config.Load(*dataDir)
+	if err != nil {
+		log.Printf("config: %v", err)
+		cfg = config.Default()
+	}
+	if *port == defaultPort && cfg.Port != 0 && cfg.Port != defaultPort {
+		*port = cfg.Port
+	}
+	if *outDir == "" && cfg.OutDir != "" {
+		*outDir = cfg.OutDir
+	}
 
 	id, err := identity.Load(*dataDir)
 	if errors.Is(err, os.ErrNotExist) {
@@ -136,7 +149,7 @@ func main() {
 		log.Fatalf("cert fingerprint: %v", err)
 	}
 
-	reg := registry.New(10 * time.Second)
+	reg := registry.New(config.TTLOrDefault(cfg))
 	go reg.SweepEvery(3 * time.Second)
 	go discovery.Listen(id, reg)
 	go discovery.Announce(id, certFingerprint, *port)
