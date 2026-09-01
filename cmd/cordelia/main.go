@@ -144,9 +144,13 @@ func main() {
 	downloadDir := server.ResolveDownloadDir(*outDir)
 
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /v1/info", server.InfoHandler(id))
 	mux.HandleFunc("GET /info", server.InfoHandler(id))
+	mux.HandleFunc("GET /v1/peers", server.PeersHandler(reg))
 	mux.HandleFunc("GET /peers", server.PeersHandler(reg))
+	mux.HandleFunc("POST /v1/message", server.MessageHandler())
 	mux.HandleFunc("POST /message", server.MessageHandler())
+	mux.HandleFunc("POST /v1/upload", server.UploadHandler(downloadDir))
 	mux.HandleFunc("POST /upload", server.UploadHandler(downloadDir))
 
 	addr := fmt.Sprintf(":%d", *port)

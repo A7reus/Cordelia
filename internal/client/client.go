@@ -84,7 +84,7 @@ func expectedFingerprintForAddr(targetAddr string, localPort int) string {
 	}
 
 	c := insecureClient(2 * time.Second)
-	res, err := c.Get(fmt.Sprintf("https://localhost:%d/peers", localPort))
+	res, err := c.Get(fmt.Sprintf("https://localhost:%d/v1/peers", localPort))
 	if err != nil {
 		return ""
 	}
@@ -106,7 +106,7 @@ func expectedFingerprintForAddr(targetAddr string, localPort int) string {
 func Probe(addr string) {
 	client := insecureClient(3 * time.Second)
 
-	res, err := client.Get(fmt.Sprintf("https://%s/info", addr))
+	res, err := client.Get(fmt.Sprintf("https://%s/v1/info", addr))
 	if err != nil {
 		log.Fatalf("probe %s: %v", addr, err)
 	}
@@ -126,7 +126,7 @@ func Probe(addr string) {
 
 func ListPeers(port int) ([]registry.Peer, error) {
 	client := insecureClient(3 * time.Second)
-	res, err := client.Get(fmt.Sprintf("https://localhost:%d/peers", port))
+	res, err := client.Get(fmt.Sprintf("https://localhost:%d/v1/peers", port))
 	if err != nil {
 		return nil, err
 	}
@@ -202,7 +202,7 @@ func SendText(addr, from, text string, localPort int) {
 	var res *http.Response
 	var lastErr error
 	for attempt := range 3 {
-		req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("https://%s/message", addr), bytes.NewBuffer(payload))
+		req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("https://%s/v1/message", addr), bytes.NewBuffer(payload))
 		if err != nil {
 			log.Fatalf("send-text: %v", err)
 		}
@@ -311,7 +311,7 @@ func SendFile(addr, filePath string, localPort int) {
 			}
 		}()
 
-		req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("https://%s/upload", addr), pr)
+		req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("https://%s/v1/upload", addr), pr)
 		if err != nil {
 			log.Fatalf("send-file: %v", err)
 		}
